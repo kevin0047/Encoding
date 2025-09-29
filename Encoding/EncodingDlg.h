@@ -70,5 +70,8 @@ protected:
 	void SaveAllConversionRecords();
 	void ClearConversionCache();
 
+	// 한글 경로 검사 함수
+	bool HasKoreanPath(const CString& path);
+
 	DECLARE_MESSAGE_MAP()
 };

@@ -113,7 +113,24 @@ void CEncodingDlg::OnBnClickedButtonBrowse()
 	CFolderPickerDialog dlg;
 	if (dlg.DoModal() == IDOK)
 	{
-		m_strPath = dlg.GetPathName();
+		CString selectedPath = dlg.GetPathName();
+
+		// 한글 경로 검사
+		if (HasKoreanPath(selectedPath))
+		{
+			CString warningMsg = _T("⚠️ 경고: 선택한 경로에 한글이 포함되어 있습니다!\n\n");
+			warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
+			warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
+			warningMsg += _T("선택한 경로: ") + selectedPath + _T("\n\n");
+			warningMsg += _T("계속 진행하시겠습니까?");
+
+			if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
+			{
+				return;
+			}
+		}
+
+		m_strPath = selectedPath;
 		UpdateData(FALSE);
 	}
 }
@@ -126,6 +143,21 @@ void CEncodingDlg::OnBnClickedButtonScan()
 	{
 		AfxMessageBox(_T("스캔할 경로를 선택해주세요."));
 		return;
+	}
+
+	// 한글 경로 재검사
+	if (HasKoreanPath(m_strPath))
+	{
+		CString warningMsg = _T("⚠️ 경고: 현재 설정된 경로에 한글이 포함되어 있습니다!\n\n");
+		warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
+		warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
+		warningMsg += _T("현재 경로: ") + m_strPath + _T("\n\n");
+		warningMsg += _T("계속 진행하시겠습니까?");
+
+		if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
+		{
+			return;
+		}
 	}
 
 	// 리스트 초기화
@@ -699,5 +731,41 @@ void CEncodingDlg::SaveAllConversionRecords()
 void CEncodingDlg::ClearConversionCache()
 {
 	m_mapConversionCache.RemoveAll();
+}
+
+bool CEncodingDlg::HasKoreanPath(const CString& path)
+{
+	// 한글 문자 범위 검사
+	// 한글 유니코드 범위: 0xAC00 ~ 0xD7AF (가-힣)
+	// 한글 자모 범위: 0x1100 ~ 0x11FF, 0x3130 ~ 0x318F
+	// 한글 호환 자모: 0x3200 ~ 0x32FF, 0x3260 ~ 0x327F
+
+	for (int i = 0; i < path.GetLength(); i++)
+	{
+		TCHAR ch = path.GetAt(i);
+		WORD unicode = (WORD)ch;
+
+		// 한글 완성형 문자 (가-힣)
+		if (unicode >= 0xAC00 && unicode <= 0xD7AF)
+			return true;
+
+		// 한글 자모
+		if (unicode >= 0x1100 && unicode <= 0x11FF)
+			return true;
+
+		// 한글 호환 자모
+		if (unicode >= 0x3130 && unicode <= 0x318F)
+			return true;
+
+		// 한글 괄호 문자 등
+		if (unicode >= 0x3200 && unicode <= 0x32FF)
+			return true;
+
+		// 한글 원문자 등
+		if (unicode >= 0x3260 && unicode <= 0x327F)
+			return true;
+	}
+
+	return false;
 }
 
