@@ -149,21 +149,35 @@ void CEncodingDlg::OnBnClickedButtonToUtf8()
 	if (AfxMessageBox(_T("모든 파일을 UTF-8로 변환하시겠습니까?"), MB_YESNO) != IDYES)
 		return;
 
+	// 기존 기록을 메모리에 로드
+	LoadAllConversionRecords();
+
 	int nTotal = (int)m_arrFileInfo.GetSize();
 	m_progress.SetRange(0, nTotal);
 	m_progress.SetPos(0);
 
+	int nConverted = 0;
 	for (int i = 0; i < nTotal; i++)
 	{
 		const EncodingInfo& info = m_arrFileInfo[i];
-		if (info.encoding == _T("ANSI"))
+		if (info.encoding == _T("ANSI") || info.encoding == _T("EUC-KR"))
 		{
-			ConvertFileEncoding(info.filePath, info.encoding, _T("UTF-8"));
+			if (ConvertFileEncoding(info.filePath, info.encoding, _T("UTF-8")))
+			{
+				// 변환 성공 시 원본 인코딩 기록
+				SaveConversionRecord(info.filePath, info.encoding);
+				nConverted++;
+			}
 		}
 		m_progress.SetPos(i + 1);
 	}
 
-	AfxMessageBox(_T("UTF-8 변환이 완료되었습니다."));
+	// 모든 기록을 파일에 저장
+	SaveAllConversionRecords();
+
+	CString strMsg;
+	strMsg.Format(_T("UTF-8 변환이 완료되었습니다. (%d개 파일 변환)"), nConverted);
+	AfxMessageBox(strMsg);
 	OnBnClickedButtonScan(); // 재스캔
 }
 
@@ -175,24 +189,57 @@ void CEncodingDlg::OnBnClickedButtonToAnsi()
 		return;
 	}
 
-	if (AfxMessageBox(_T("모든 파일을 ANSI로 변환하시겠습니까?"), MB_YESNO) != IDYES)
+	if (AfxMessageBox(_T("UTF-8 파일들을 원본 인코딩으로 되돌리시겠습니까?"), MB_YESNO) != IDYES)
 		return;
+
+	// 모든 기록을 메모리에 로드
+	LoadAllConversionRecords();
 
 	int nTotal = (int)m_arrFileInfo.GetSize();
 	m_progress.SetRange(0, nTotal);
 	m_progress.SetPos(0);
 
+	int nConverted = 0;
+	int nSkipped = 0;
 	for (int i = 0; i < nTotal; i++)
 	{
 		const EncodingInfo& info = m_arrFileInfo[i];
 		if (info.encoding == _T("UTF-8"))
 		{
-			ConvertFileEncoding(info.filePath, info.encoding, _T("ANSI"));
+			// 변환 기록에서 원본 인코딩 확인 (이제 메모리에서 빠르게 조회)
+			CString originalEncoding = LoadOriginalEncoding(info.filePath);
+			if (!originalEncoding.IsEmpty())
+			{
+				// 원본 인코딩으로 되돌리기
+				if (ConvertFileEncoding(info.filePath, _T("UTF-8"), originalEncoding))
+				{
+					// 변환 성공 시 기록 삭제 (메모리에서)
+					DeleteConversionRecord(info.filePath);
+					nConverted++;
+				}
+			}
+			else
+			{
+				// 기록이 없는 경우 - 원래부터 UTF-8이었거나 다른 도구로 변환된 파일
+				nSkipped++;
+			}
 		}
 		m_progress.SetPos(i + 1);
 	}
 
-	AfxMessageBox(_T("ANSI 변환이 완료되었습니다."));
+	// 변경된 기록을 파일에 저장
+	SaveAllConversionRecords();
+
+	CString strMsg;
+	if (nSkipped > 0)
+	{
+		strMsg.Format(_T("원본 인코딩 복원이 완료되었습니다.\n변환됨: %d개\n건너뜀: %d개 (기록 없음)"), nConverted, nSkipped);
+	}
+	else
+	{
+		strMsg.Format(_T("원본 인코딩 복원이 완료되었습니다. (%d개 파일 변환)"), nConverted);
+	}
+	AfxMessageBox(strMsg);
 	OnBnClickedButtonScan(); // 재스캔
 }
 
@@ -241,7 +288,7 @@ void CEncodingDlg::ScanDirectory(const CString& strPath)
 				// 카운트 증가
 				if (encoding == _T("UTF-8"))
 					m_nUtf8Count++;
-				else if (encoding == _T("ANSI"))
+				else if (encoding == _T("ANSI") || encoding == _T("EUC-KR"))
 					m_nAnsiCount++;
 				else
 					m_nOtherCount++;
@@ -301,11 +348,14 @@ CString CEncodingDlg::DetectEncoding(const CString& filePath)
 
 	// UTF-8 패턴 체크
 	bool isValidUtf8 = true;
-	for (int i = 0; i < bytesRead; i++)
+	bool hasUtf8Multibyte = false;
+
+	for (int i = 0; i < (int)bytesRead; i++)
 	{
 		BYTE b = data[i];
 		if (b & 0x80) // 멀티바이트 문자
 		{
+			hasUtf8Multibyte = true;
 			int expectedBytes = 0;
 			if ((b & 0xE0) == 0xC0) expectedBytes = 1;
 			else if ((b & 0xF0) == 0xE0) expectedBytes = 2;
@@ -313,7 +363,7 @@ CString CEncodingDlg::DetectEncoding(const CString& filePath)
 			else { isValidUtf8 = false; break; }
 
 			// 후속 바이트들이 10xxxxxx 패턴인지 확인
-			for (int j = 1; j <= expectedBytes && (i + j) < bytesRead; j++)
+			for (int j = 1; j <= expectedBytes && (i + j) < (int)bytesRead; j++)
 			{
 				if ((data[i + j] & 0xC0) != 0x80)
 				{
@@ -326,19 +376,36 @@ CString CEncodingDlg::DetectEncoding(const CString& filePath)
 		}
 	}
 
-	if (isValidUtf8)
+	// UTF-8인지 확인
+	if (isValidUtf8 && hasUtf8Multibyte)
 	{
-		// 한글이 포함되어 있으면서 UTF-8 패턴이면 UTF-8
-		for (int i = 0; i < bytesRead - 2; i++)
+		return _T("UTF-8");
+	}
+
+	// EUC-KR/CP949 패턴 체크 (한글)
+	bool hasKorean = false;
+	for (int i = 0; i < (int)bytesRead - 1; i++)
+	{
+		BYTE b1 = data[i];
+		BYTE b2 = data[i + 1];
+
+		// EUC-KR 한글 범위 체크
+		// 완성형 한글: 0xB0A1 ~ 0xC8FE
+		// 조합형 한글: 0x81 ~ 0xFE의 첫 바이트
+		if ((b1 >= 0xB0 && b1 <= 0xC8) ||
+			(b1 >= 0x81 && b1 <= 0xFE && b2 >= 0x41 && b2 <= 0xFE))
 		{
-			if ((data[i] & 0xE0) == 0xE0) // 3바이트 UTF-8 (한글 포함)
-			{
-				return _T("UTF-8");
-			}
+			hasKorean = true;
+			break;
 		}
 	}
 
-	// 기본적으로 ANSI로 판단
+	if (hasKorean)
+	{
+		return _T("EUC-KR");
+	}
+
+	// ASCII나 확장 ASCII
 	return _T("ANSI");
 }
 
@@ -366,8 +433,8 @@ bool CEncodingDlg::ConvertFileEncoding(const CString& filePath, const CString& f
 		file.Close();
 
 		CStringW wideText;
-		CStringA utf8Text;
 
+		// 소스 인코딩에서 유니코드로 변환
 		if (fromEncoding == _T("UTF-8"))
 		{
 			// UTF-8에서 변환
@@ -377,22 +444,51 @@ bool CEncodingDlg::ConvertFileEncoding(const CString& filePath, const CString& f
 
 			int wideLen = MultiByteToWideChar(CP_UTF8, 0,
 				(char*)data.GetData() + bomOffset, (int)(fileSize - bomOffset), NULL, 0);
-			wideText.GetBuffer(wideLen);
-			MultiByteToWideChar(CP_UTF8, 0,
-				(char*)data.GetData() + bomOffset, (int)(fileSize - bomOffset),
-				wideText.GetBuffer(), wideLen);
-			wideText.ReleaseBuffer(wideLen);
+			if (wideLen > 0)
+			{
+				wideText.GetBuffer(wideLen);
+				MultiByteToWideChar(CP_UTF8, 0,
+					(char*)data.GetData() + bomOffset, (int)(fileSize - bomOffset),
+					wideText.GetBuffer(), wideLen);
+				wideText.ReleaseBuffer(wideLen);
+			}
+		}
+		else if (fromEncoding == _T("EUC-KR"))
+		{
+			// EUC-KR(CP949)에서 변환 - 명시적으로 CP949 사용
+			int wideLen = MultiByteToWideChar(949, 0,
+				(char*)data.GetData(), (int)fileSize, NULL, 0);
+			if (wideLen > 0)
+			{
+				wideText.GetBuffer(wideLen);
+				MultiByteToWideChar(949, 0,
+					(char*)data.GetData(), (int)fileSize,
+					wideText.GetBuffer(), wideLen);
+				wideText.ReleaseBuffer(wideLen);
+			}
 		}
 		else if (fromEncoding == _T("ANSI"))
 		{
-			// ANSI(CP949)에서 변환
+			// ANSI에서 변환 - 시스템 기본 코드페이지 사용
 			int wideLen = MultiByteToWideChar(CP_ACP, 0,
 				(char*)data.GetData(), (int)fileSize, NULL, 0);
-			wideText.GetBuffer(wideLen);
-			MultiByteToWideChar(CP_ACP, 0,
-				(char*)data.GetData(), (int)fileSize,
-				wideText.GetBuffer(), wideLen);
-			wideText.ReleaseBuffer(wideLen);
+			if (wideLen > 0)
+			{
+				wideText.GetBuffer(wideLen);
+				MultiByteToWideChar(CP_ACP, 0,
+					(char*)data.GetData(), (int)fileSize,
+					wideText.GetBuffer(), wideLen);
+				wideText.ReleaseBuffer(wideLen);
+			}
+		}
+
+		// 변환된 텍스트가 없으면 실패
+		if (wideText.IsEmpty())
+		{
+			// 백업 파일로 복원
+			CopyFile(backupPath, filePath, FALSE);
+			DeleteFile(backupPath);
+			return false;
 		}
 
 		// 대상 인코딩으로 변환하여 저장
@@ -407,22 +503,43 @@ bool CEncodingDlg::ConvertFileEncoding(const CString& filePath, const CString& f
 
 			// UTF-8로 변환
 			int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideText, -1, NULL, 0, NULL, NULL);
-			utf8Text.GetBuffer(utf8Len);
-			WideCharToMultiByte(CP_UTF8, 0, wideText, -1, utf8Text.GetBuffer(), utf8Len, NULL, NULL);
-			utf8Text.ReleaseBuffer(utf8Len - 1); // null terminator 제외
+			if (utf8Len > 1) // null terminator 포함
+			{
+				CStringA utf8Text;
+				utf8Text.GetBuffer(utf8Len);
+				WideCharToMultiByte(CP_UTF8, 0, wideText, -1, utf8Text.GetBuffer(), utf8Len, NULL, NULL);
+				utf8Text.ReleaseBuffer(utf8Len - 1); // null terminator 제외
 
-			file.Write(utf8Text, utf8Text.GetLength());
+				file.Write(utf8Text, utf8Text.GetLength());
+			}
+		}
+		else if (toEncoding == _T("EUC-KR"))
+		{
+			// EUC-KR(CP949)로 변환
+			int eucLen = WideCharToMultiByte(949, 0, wideText, -1, NULL, 0, NULL, NULL);
+			if (eucLen > 1)
+			{
+				CStringA eucText;
+				eucText.GetBuffer(eucLen);
+				WideCharToMultiByte(949, 0, wideText, -1, eucText.GetBuffer(), eucLen, NULL, NULL);
+				eucText.ReleaseBuffer(eucLen - 1);
+
+				file.Write(eucText, eucText.GetLength());
+			}
 		}
 		else if (toEncoding == _T("ANSI"))
 		{
-			// ANSI(CP949)로 변환
+			// ANSI로 변환
 			int ansiLen = WideCharToMultiByte(CP_ACP, 0, wideText, -1, NULL, 0, NULL, NULL);
-			CStringA ansiText;
-			ansiText.GetBuffer(ansiLen);
-			WideCharToMultiByte(CP_ACP, 0, wideText, -1, ansiText.GetBuffer(), ansiLen, NULL, NULL);
-			ansiText.ReleaseBuffer(ansiLen - 1);
+			if (ansiLen > 1)
+			{
+				CStringA ansiText;
+				ansiText.GetBuffer(ansiLen);
+				WideCharToMultiByte(CP_ACP, 0, wideText, -1, ansiText.GetBuffer(), ansiLen, NULL, NULL);
+				ansiText.ReleaseBuffer(ansiLen - 1);
 
-			file.Write(ansiText, ansiText.GetLength());
+				file.Write(ansiText, ansiText.GetLength());
+			}
 		}
 
 		file.Close();
@@ -443,7 +560,7 @@ void CEncodingDlg::UpdateCountDisplay()
 	strCount.Format(_T("UTF-8: %d개"), m_nUtf8Count);
 	SetDlgItemText(IDC_STATIC_UTF8_COUNT, strCount);
 
-	strCount.Format(_T("ANSI: %d"), m_nAnsiCount);
+	strCount.Format(_T("EUC-KR/ANSI: %d개"), m_nAnsiCount);
 	SetDlgItemText(IDC_STATIC_ANSI_COUNT, strCount);
 
 	strCount.Format(_T("기타: %d개"), m_nOtherCount);
@@ -453,25 +570,134 @@ void CEncodingDlg::UpdateCountDisplay()
 bool CEncodingDlg::IsSourceFile(const CString& fileName)
 {
 	CString ext = fileName.Right(4).MakeLower();
+	CString ext3 = fileName.Right(3).MakeLower();
+	CString ext2 = fileName.Right(2).MakeLower();
 
 	// C/C++ 소스 파일들
 	if (ext == _T(".cpp") || ext == _T(".cxx") || ext == _T(".cc") ||
-		fileName.Right(2).MakeLower() == _T(".c"))
+		ext2 == _T(".c"))
 		return true;
 
 	// 헤더 파일들
-	if (fileName.Right(2).MakeLower() == _T(".h") ||
-		ext == _T(".hpp") || ext == _T(".hxx"))
+	if (ext2 == _T(".h") || ext == _T(".hpp") || ext == _T(".hxx"))
+		return true;
+
+	// 리소스 파일들
+	if (ext3 == _T(".rc") || ext == _T(".rc2") || ext == _T(".rct") ||
+		ext == _T(".rgs") || ext == _T(".idl") || ext == _T(".def"))
+		return true;
+
+	// 텍스트 파일들
+	if (ext == _T(".txt") || ext3 == _T(".md") || ext == _T(".ini") ||
+		ext == _T(".cfg") || ext == _T(".log"))
 		return true;
 
 	// 기타 소스 파일들
-	if (ext == _T(".java") || ext == _T(".py") || ext == _T(".js") ||
-		ext == _T(".ts") || ext == _T(".cs") || ext == _T(".go") ||
-		ext == _T(".php") || ext == _T(".rb") || ext == _T(".pl") ||
+	if (ext == _T(".java") || ext3 == _T(".py") || ext3 == _T(".js") ||
+		ext3 == _T(".ts") || ext3 == _T(".cs") || ext3 == _T(".go") ||
+		ext == _T(".php") || ext3 == _T(".rb") || ext3 == _T(".pl") ||
 		ext == _T(".sql") || ext == _T(".xml") || ext == _T(".htm") ||
 		fileName.Right(5).MakeLower() == _T(".html"))
 		return true;
 
 	return false;
+}
+
+CString CEncodingDlg::GetRecordFilePath()
+{
+	// 실행 파일과 같은 디렉토리에 기록 파일 생성
+	TCHAR szPath[MAX_PATH];
+	GetModuleFileName(NULL, szPath, MAX_PATH);
+	CString strAppPath = szPath;
+	int nPos = strAppPath.ReverseFind(_T('\\'));
+	if (nPos != -1)
+		strAppPath = strAppPath.Left(nPos + 1);
+
+	return strAppPath + _T("EncodingConversionRecord.txt");
+}
+
+void CEncodingDlg::SaveConversionRecord(const CString& filePath, const CString& originalEncoding)
+{
+	// 메모리 캐시에 저장
+	m_mapConversionCache.SetAt(filePath, originalEncoding);
+}
+
+CString CEncodingDlg::LoadOriginalEncoding(const CString& filePath)
+{
+	CString originalEncoding;
+	if (m_mapConversionCache.Lookup(filePath, originalEncoding))
+	{
+		return originalEncoding;
+	}
+	return _T("");
+}
+
+void CEncodingDlg::DeleteConversionRecord(const CString& filePath)
+{
+	// 메모리 캐시에서 삭제
+	m_mapConversionCache.RemoveKey(filePath);
+}
+
+void CEncodingDlg::LoadAllConversionRecords()
+{
+	m_mapConversionCache.RemoveAll();
+	CString recordPath = GetRecordFilePath();
+
+	try
+	{
+		CStdioFile file;
+		if (file.Open(recordPath, CFile::modeRead))
+		{
+			CString line;
+			while (file.ReadString(line))
+			{
+				int delimPos = line.Find(_T('|'));
+				if (delimPos != -1)
+				{
+					CString filePath = line.Left(delimPos);
+					CString encoding = line.Mid(delimPos + 1);
+					m_mapConversionCache.SetAt(filePath, encoding);
+				}
+			}
+			file.Close();
+		}
+	}
+	catch (...)
+	{
+		// 에러 시 빈 캐시 유지
+	}
+}
+
+void CEncodingDlg::SaveAllConversionRecords()
+{
+	CString recordPath = GetRecordFilePath();
+
+	try
+	{
+		CStdioFile file;
+		if (file.Open(recordPath, CFile::modeCreate | CFile::modeWrite))
+		{
+			POSITION pos = m_mapConversionCache.GetStartPosition();
+			while (pos != NULL)
+			{
+				CString filePath, encoding;
+				m_mapConversionCache.GetNextAssoc(pos, filePath, encoding);
+
+				CString record;
+				record.Format(_T("%s|%s\n"), filePath, encoding);
+				file.WriteString(record);
+			}
+			file.Close();
+		}
+	}
+	catch (...)
+	{
+		// 에러 무시
+	}
+}
+
+void CEncodingDlg::ClearConversionCache()
+{
+	m_mapConversionCache.RemoveAll();
 }
 

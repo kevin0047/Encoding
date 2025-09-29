@@ -37,6 +37,7 @@ public:
 	int m_nOtherCount;
 
 	CArray<EncodingInfo> m_arrFileInfo;
+	CMap<CString, LPCTSTR, CString, LPCTSTR> m_mapConversionCache;
 
 // 구현입니다.
 protected:
@@ -57,6 +58,17 @@ protected:
 	bool ConvertFileEncoding(const CString& filePath, const CString& fromEncoding, const CString& toEncoding);
 	void UpdateCountDisplay();
 	bool IsSourceFile(const CString& fileName);
+
+	// 변환 기록 관련 함수
+	void SaveConversionRecord(const CString& filePath, const CString& originalEncoding);
+	CString LoadOriginalEncoding(const CString& filePath);
+	void DeleteConversionRecord(const CString& filePath);
+	CString GetRecordFilePath();
+
+	// 성능 개선 함수
+	void LoadAllConversionRecords();
+	void SaveAllConversionRecords();
+	void ClearConversionCache();
 
 	DECLARE_MESSAGE_MAP()
 };
