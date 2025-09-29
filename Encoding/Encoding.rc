@@ -1,0 +1,149 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#ifndef APSTUDIO_INVOKED
+#include "targetver.h"
+#endif
+#include "afxres.h"
+#include "verrsrc.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Korean (Korea) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE
+BEGIN
+"resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+"#ifndef APSTUDIO_INVOKED\r\n"
+"#include ""targetver.h""\r\n"
+"#endif\r\n"
+"#include ""afxres.h""\r\n"
+"#include ""verrsrc.h""\r\n"
+"\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+"#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+"#define _AFX_NO_OLE_RESOURCES\r\n"
+"#define _AFX_NO_TRACKER_RESOURCES\r\n"
+"#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+"\r\n"
+"#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)\r\n"
+"LANGUAGE 18, 1\r\n"
+"#include ""res\\Encoding.rc2""  // Microsoft Visual C++에서 편집하지 않은 리소스입니다.\r\n"
+"#include ""l.KOR\\afxres.rc""      // 표준 구성 요소\r\n"
+"#endif\r\n"
+"\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\Encoding.ico"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_ENCODING_DIALOG DIALOGEX 0, 0, 420, 350
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "소스코드 인코딩 변환기"
+FONT 9, "맑은 고딕", 400, 0, 0x1
+BEGIN
+LTEXT           "스캔 경로:", IDC_STATIC, 14, 14, 40, 8
+EDITTEXT        IDC_EDIT_PATH, 60, 12, 280, 14, ES_AUTOHSCROLL
+PUSHBUTTON      "찾기", IDC_BUTTON_BROWSE, 350, 12, 50, 14
+PUSHBUTTON      "스캔", IDC_BUTTON_SCAN, 350, 35, 50, 14
+
+GROUPBOX        "스캔 결과", IDC_STATIC, 14, 60, 386, 120
+CONTROL         "", IDC_LIST_RESULTS, "SysListView32", LVS_REPORT | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP, 24, 75, 366, 95
+
+GROUPBOX        "인코딩 통계", IDC_STATIC, 14, 190, 180, 80
+LTEXT           "UTF-8: 0개", IDC_STATIC_UTF8_COUNT, 24, 210, 80, 8
+LTEXT           "ANSI: 0", IDC_STATIC_ANSI_COUNT, 24, 230, 80, 8
+LTEXT           "기타: 0개", IDC_STATIC_OTHER_COUNT, 24, 250, 80, 8
+
+GROUPBOX        "인코딩 변환", IDC_STATIC, 220, 190, 180, 80
+PUSHBUTTON      "UTF-8로 변환", IDC_BUTTON_TO_UTF8, 230, 210, 70, 20
+PUSHBUTTON      "To ANSI", IDC_BUTTON_TO_ANSI, 320, 210, 70, 20
+
+LTEXT           "진행률:", IDC_STATIC, 14, 290, 30, 8
+CONTROL         "", IDC_PROGRESS, "msctls_progress32", WS_BORDER, 50, 288, 350, 14
+
+
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+IDD_ENCODING_DIALOG, DIALOG
+BEGIN
+LEFTMARGIN, 7
+RIGHTMARGIN, 413
+TOPMARGIN, 7
+BOTTOMMARGIN, 343
+END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // Korean (Korea) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE 18, 1
+#include "res\Encoding.rc2"  // Microsoft Visual C++에서 편집하지 않은 리소스입니다.
+#include "l.KOR\afxres.rc"      // 표준 구성 요소
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED

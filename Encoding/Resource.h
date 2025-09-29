@@ -1,0 +1,29 @@
+﻿//{{NO_DEPENDENCIES}}
+// Microsoft Visual C++에서 생성한 포함 파일입니다.
+// Encoding.rc에서 사용
+//
+#define IDR_MAINFRAME					128
+#define IDD_ENCODING_DIALOG				102
+#define IDC_EDIT_PATH				1000
+#define IDC_BUTTON_BROWSE			1001
+#define IDC_BUTTON_SCAN				1002
+#define IDC_STATIC_UTF8_COUNT		1003
+#define IDC_STATIC_ANSI_COUNT		1004
+#define IDC_STATIC_OTHER_COUNT		1005
+#define IDC_BUTTON_TO_UTF8			1006
+#define IDC_BUTTON_TO_ANSI			1007
+#define IDC_LIST_RESULTS			1008
+#define IDC_PROGRESS				1009
+// 다음은 새 개체에 사용할 기본값입니다.
+//
+#ifdef APSTUDIO_INVOKED
+#ifndef APSTUDIO_READONLY_SYMBOLS
+
+
+
+#define _APS_NEXT_RESOURCE_VALUE	129
+#define _APS_NEXT_CONTROL_VALUE		1010
+#define _APS_NEXT_SYMED_VALUE		101
+#define _APS_NEXT_COMMAND_VALUE		32771
+#endif
+#endif
