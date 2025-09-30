@@ -604,6 +604,31 @@ bool CEncodingDlg::IsSourceFile(const CString& fileName)
 	CString ext = fileName.Right(4).MakeLower();
 	CString ext3 = fileName.Right(3).MakeLower();
 	CString ext2 = fileName.Right(2).MakeLower();
+	CString ext5 = fileName.Right(5).MakeLower();
+	CString lowerName = fileName.MakeLower();
+
+	// 제외할 파일들 (자동 생성 파일, 프로젝트 파일, 리소스 파일)
+	// Visual Studio 프로젝트/솔루션 파일
+	if (ext == _T(".sln") || fileName.Right(8).MakeLower() == _T(".vcxproj") ||
+		fileName.Right(16).MakeLower() == _T(".vcxproj.filters") ||
+		fileName.Right(13).MakeLower() == _T(".vcxproj.user") ||
+		fileName.Right(7).MakeLower() == _T(".csproj") ||
+		ext == _T(".aps"))
+		return false;
+
+	// 리소스 파일 (.rc는 바이너리 리소스 포함으로 문제 발생 가능)
+	if (ext3 == _T(".rc") || ext == _T(".resx"))
+		return false;
+
+	// 자동 생성 파일
+	if (lowerName.Find(_T(".designer.")) != -1 ||
+		lowerName.Find(_T(".generated.")) != -1)
+		return false;
+
+	// 설정 파일 (대부분 UTF-8 고정이거나 시스템 관리)
+	if (ext == _T(".json") || ext == _T(".config") ||
+		fileName.Right(9).MakeLower() == _T(".settings"))
+		return false;
 
 	// C/C++ 소스 파일들
 	if (ext == _T(".cpp") || ext == _T(".cxx") || ext == _T(".cc") ||
@@ -614,8 +639,12 @@ bool CEncodingDlg::IsSourceFile(const CString& fileName)
 	if (ext2 == _T(".h") || ext == _T(".hpp") || ext == _T(".hxx"))
 		return true;
 
-	// 리소스 파일들
-	if (ext3 == _T(".rc") || ext == _T(".rc2") || ext == _T(".rct") ||
+	// C# 소스 파일 (.Designer.cs는 위에서 이미 제외됨)
+	if (ext3 == _T(".cs"))
+		return true;
+
+	// 기타 리소스 파일들
+	if (ext == _T(".rc2") || ext == _T(".rct") ||
 		ext == _T(".rgs") || ext == _T(".idl") || ext == _T(".def"))
 		return true;
 
@@ -626,10 +655,10 @@ bool CEncodingDlg::IsSourceFile(const CString& fileName)
 
 	// 기타 소스 파일들
 	if (ext == _T(".java") || ext3 == _T(".py") || ext3 == _T(".js") ||
-		ext3 == _T(".ts") || ext3 == _T(".cs") || ext3 == _T(".go") ||
+		ext3 == _T(".ts") || ext3 == _T(".go") ||
 		ext == _T(".php") || ext3 == _T(".rb") || ext3 == _T(".pl") ||
 		ext == _T(".sql") || ext == _T(".xml") || ext == _T(".htm") ||
-		fileName.Right(5).MakeLower() == _T(".html"))
+		ext5 == _T(".html"))
 		return true;
 
 	return false;
