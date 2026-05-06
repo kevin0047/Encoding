@@ -39,6 +39,13 @@ public:
 	CArray<EncodingInfo> m_arrFileInfo;
 	CMap<CString, LPCTSTR, CString, LPCTSTR> m_mapConversionCache;
 
+	// 스레드 관련
+	CWinThread* m_pScanThread;
+	BOOL m_bStopScan;
+	int m_nTotalFiles;
+	int m_nScannedFiles;
+	CCriticalSection m_csFileInfo;
+
 // 구현입니다.
 protected:
 	HICON m_hIcon;
@@ -54,10 +61,17 @@ protected:
 
 	// 사용자 정의 함수
 	void ScanDirectory(const CString& strPath);
+	void CountFilesInDirectory(const CString& strPath, int& count);
 	CString DetectEncoding(const CString& filePath);
 	bool ConvertFileEncoding(const CString& filePath, const CString& fromEncoding, const CString& toEncoding);
 	void UpdateCountDisplay();
 	bool IsSourceFile(const CString& fileName);
+
+	// 스레드 관련
+	static UINT ScanThreadProc(LPVOID pParam);
+	void DoScanDirectory(const CString& strPath);
+	afx_msg LRESULT OnScanProgress(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnScanComplete(WPARAM wParam, LPARAM lParam);
 
 	// 변환 기록 관련 함수
 	void SaveConversionRecord(const CString& filePath, const CString& originalEncoding);

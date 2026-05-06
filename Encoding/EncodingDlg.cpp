@@ -23,6 +23,10 @@ CEncodingDlg::CEncodingDlg(CWnd* pParent /*=nullptr*/)
 	, m_nUtf8Count(0)
 	, m_nAnsiCount(0)
 	, m_nOtherCount(0)
+	, m_pScanThread(NULL)
+	, m_bStopScan(FALSE)
+	, m_nTotalFiles(0)
+	, m_nScannedFiles(0)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -42,6 +46,8 @@ BEGIN_MESSAGE_MAP(CEncodingDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_SCAN, &CEncodingDlg::OnBnClickedButtonScan)
 	ON_BN_CLICKED(IDC_BUTTON_TO_UTF8, &CEncodingDlg::OnBnClickedButtonToUtf8)
 	ON_BN_CLICKED(IDC_BUTTON_TO_ANSI, &CEncodingDlg::OnBnClickedButtonToAnsi)
+	ON_MESSAGE(WM_USER + 100, &CEncodingDlg::OnScanProgress)
+	ON_MESSAGE(WM_USER + 101, &CEncodingDlg::OnScanComplete)
 END_MESSAGE_MAP()
 
 
@@ -115,20 +121,20 @@ void CEncodingDlg::OnBnClickedButtonBrowse()
 	{
 		CString selectedPath = dlg.GetPathName();
 
-		// 한글 경로 검사
-		if (HasKoreanPath(selectedPath))
-		{
-			CString warningMsg = _T("⚠️ 경고: 선택한 경로에 한글이 포함되어 있습니다!\n\n");
-			warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
-			warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
-			warningMsg += _T("선택한 경로: ") + selectedPath + _T("\n\n");
-			warningMsg += _T("계속 진행하시겠습니까?");
+		//// 한글 경로 검사 - utf8로 경로 저장하는 방법으로 해결된 이슈
+		//if (HasKoreanPath(selectedPath))
+		//{
+		//	CString warningMsg = _T("⚠️ 경고: 선택한 경로에 한글이 포함되어 있습니다!\n\n");
+		//	warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
+		//	warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
+		//	warningMsg += _T("선택한 경로: ") + selectedPath + _T("\n\n");
+		//	warningMsg += _T("계속 진행하시겠습니까?");
 
-			if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
-			{
-				return;
-			}
-		}
+		//	if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
+		//	{
+		//		return;
+		//	}
+		//}
 
 		m_strPath = selectedPath;
 		UpdateData(FALSE);
@@ -145,29 +151,50 @@ void CEncodingDlg::OnBnClickedButtonScan()
 		return;
 	}
 
-	// 한글 경로 재검사
-	if (HasKoreanPath(m_strPath))
+	// 이미 스캔 중이면 중단
+	if (m_pScanThread != NULL)
 	{
-		CString warningMsg = _T("⚠️ 경고: 현재 설정된 경로에 한글이 포함되어 있습니다!\n\n");
-		warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
-		warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
-		warningMsg += _T("현재 경로: ") + m_strPath + _T("\n\n");
-		warningMsg += _T("계속 진행하시겠습니까?");
-
-		if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
-		{
-			return;
-		}
+		AfxMessageBox(_T("이미 스캔이 진행 중입니다."));
+		return;
 	}
+
+	//// 한글 경로 재검사 - utf8로 경로 저장하는 방법으로 해결된 이슈
+	//if (HasKoreanPath(m_strPath))
+	//{
+	//	CString warningMsg = _T("⚠️ 경고: 현재 설정된 경로에 한글이 포함되어 있습니다!\n\n");
+	//	warningMsg += _T("한글이 포함된 경로에서는 파일 복원 시 문제가 발생할 수 있습니다.\n");
+	//	warningMsg += _T("영문 경로를 사용하시기를 강력히 권장합니다.\n\n");
+	//	warningMsg += _T("현재 경로: ") + m_strPath + _T("\n\n");
+	//	warningMsg += _T("계속 진행하시겠습니까?");
+
+	//	if (AfxMessageBox(warningMsg, MB_YESNO | MB_ICONWARNING) != IDYES)
+	//	{
+	//		return;
+	//	}
+	//}
 
 	// 리스트 초기화
 	m_listResults.DeleteAllItems();
 	m_arrFileInfo.RemoveAll();
 	m_nUtf8Count = m_nAnsiCount = m_nOtherCount = 0;
 
-	// 스캔 시작
-	ScanDirectory(m_strPath);
-	UpdateCountDisplay();
+	// 진행률 초기화
+	m_nTotalFiles = 0;
+	m_nScannedFiles = 0;
+	m_bStopScan = FALSE;
+
+	// 먼저 전체 파일 개수 세기
+	CountFilesInDirectory(m_strPath, m_nTotalFiles);
+	m_progress.SetRange(0, m_nTotalFiles);
+	m_progress.SetPos(0);
+
+	// 스캔 스레드 시작
+	m_pScanThread = AfxBeginThread(ScanThreadProc, this, THREAD_PRIORITY_NORMAL, 0, CREATE_SUSPENDED);
+	if (m_pScanThread != NULL)
+	{
+		m_pScanThread->m_bAutoDelete = FALSE;
+		m_pScanThread->ResumeThread();
+	}
 }
 
 void CEncodingDlg::OnBnClickedButtonToUtf8()
@@ -601,18 +628,25 @@ void CEncodingDlg::UpdateCountDisplay()
 
 bool CEncodingDlg::IsSourceFile(const CString& fileName)
 {
-	CString ext = fileName.Right(4).MakeLower();
-	CString ext3 = fileName.Right(3).MakeLower();
-	CString ext2 = fileName.Right(2).MakeLower();
-	CString ext5 = fileName.Right(5).MakeLower();
-	CString lowerName = fileName.MakeLower();
+	CString lowerName = fileName;
+	lowerName.MakeLower();
+
+	CString ext = lowerName.Right(4);
+	CString ext3 = lowerName.Right(3);
+	CString ext2 = lowerName.Right(2);
+	CString ext5 = lowerName.Right(5);
+	CString ext8 = lowerName.Right(8);
+	CString ext16 = lowerName.Right(16);
+	CString ext13 = lowerName.Right(13);
+	CString ext7 = lowerName.Right(7);
+	CString ext9 = lowerName.Right(9);
 
 	// 제외할 파일들 (자동 생성 파일, 프로젝트 파일, 리소스 파일)
 	// Visual Studio 프로젝트/솔루션 파일
-	if (ext == _T(".sln") || fileName.Right(8).MakeLower() == _T(".vcxproj") ||
-		fileName.Right(16).MakeLower() == _T(".vcxproj.filters") ||
-		fileName.Right(13).MakeLower() == _T(".vcxproj.user") ||
-		fileName.Right(7).MakeLower() == _T(".csproj") ||
+	if (ext == _T(".sln") || ext8 == _T(".vcxproj") ||
+		ext16 == _T(".vcxproj.filters") ||
+		ext13 == _T(".vcxproj.user") ||
+		ext7 == _T(".csproj") ||
 		ext == _T(".aps"))
 		return false;
 
@@ -627,7 +661,7 @@ bool CEncodingDlg::IsSourceFile(const CString& fileName)
 
 	// 설정 파일 (대부분 UTF-8 고정이거나 시스템 관리)
 	if (ext == _T(".json") || ext == _T(".config") ||
-		fileName.Right(9).MakeLower() == _T(".settings"))
+		ext9 == _T(".settings"))
 		return false;
 
 	// C/C++ 소스 파일들
@@ -666,15 +700,11 @@ bool CEncodingDlg::IsSourceFile(const CString& fileName)
 
 CString CEncodingDlg::GetRecordFilePath()
 {
-	// 실행 파일과 같은 디렉토리에 기록 파일 생성
-	TCHAR szPath[MAX_PATH];
-	GetModuleFileName(NULL, szPath, MAX_PATH);
-	CString strAppPath = szPath;
-	int nPos = strAppPath.ReverseFind(_T('\\'));
-	if (nPos != -1)
-		strAppPath = strAppPath.Left(nPos + 1);
+	CString strDir = _T("D:\\EncodingConversionRecord");
+	if (GetFileAttributes(strDir) == INVALID_FILE_ATTRIBUTES)
+		CreateDirectory(strDir, NULL);
 
-	return strAppPath + _T("EncodingConversionRecord.txt");
+	return strDir + _T("\\EncodingConversionRecord.txt");
 }
 
 void CEncodingDlg::SaveConversionRecord(const CString& filePath, const CString& originalEncoding)
@@ -704,28 +734,40 @@ void CEncodingDlg::LoadAllConversionRecords()
 	m_mapConversionCache.RemoveAll();
 	CString recordPath = GetRecordFilePath();
 
-	try
+	CFile file;
+	if (!file.Open(recordPath, CFile::modeRead))
+		return;
+
+	ULONGLONG fileSize = file.GetLength();
+	if (fileSize == 0) { file.Close(); return; }
+
+	CStringA utf8Data;
+	file.Read(utf8Data.GetBuffer((int)fileSize), (UINT)fileSize);
+	utf8Data.ReleaseBuffer((int)fileSize);
+	file.Close();
+
+	int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8Data, utf8Data.GetLength(), NULL, 0);
+	CStringW wideData;
+	MultiByteToWideChar(CP_UTF8, 0, utf8Data, utf8Data.GetLength(), wideData.GetBuffer(wideLen), wideLen);
+	wideData.ReleaseBuffer(wideLen);
+
+	int pos = 0;
+	while (pos < wideData.GetLength())
 	{
-		CStdioFile file;
-		if (file.Open(recordPath, CFile::modeRead))
+		int newline = wideData.Find(L'\n', pos);
+		CStringW line = (newline == -1) ? wideData.Mid(pos) : wideData.Mid(pos, newline - pos);
+		line.TrimRight(L'\r');
+
+		int delimPos = line.Find(L'|');
+		if (delimPos != -1)
 		{
-			CString line;
-			while (file.ReadString(line))
-			{
-				int delimPos = line.Find(_T('|'));
-				if (delimPos != -1)
-				{
-					CString filePath = line.Left(delimPos);
-					CString encoding = line.Mid(delimPos + 1);
-					m_mapConversionCache.SetAt(filePath, encoding);
-				}
-			}
-			file.Close();
+			CString filePath = line.Left(delimPos);
+			CString encoding = line.Mid(delimPos + 1);
+			m_mapConversionCache.SetAt(filePath, encoding);
 		}
-	}
-	catch (...)
-	{
-		// 에러 시 빈 캐시 유지
+
+		if (newline == -1) break;
+		pos = newline + 1;
 	}
 }
 
@@ -733,28 +775,28 @@ void CEncodingDlg::SaveAllConversionRecords()
 {
 	CString recordPath = GetRecordFilePath();
 
-	try
-	{
-		CStdioFile file;
-		if (file.Open(recordPath, CFile::modeCreate | CFile::modeWrite))
-		{
-			POSITION pos = m_mapConversionCache.GetStartPosition();
-			while (pos != NULL)
-			{
-				CString filePath, encoding;
-				m_mapConversionCache.GetNextAssoc(pos, filePath, encoding);
+	CFile file;
+	if (!file.Open(recordPath, CFile::modeCreate | CFile::modeWrite))
+		return;
 
-				CString record;
-				record.Format(_T("%s|%s\n"), filePath, encoding);
-				file.WriteString(record);
-			}
-			file.Close();
-		}
-	}
-	catch (...)
+	POSITION pos = m_mapConversionCache.GetStartPosition();
+	while (pos != NULL)
 	{
-		// 에러 무시
+		CString filePath, encoding;
+		m_mapConversionCache.GetNextAssoc(pos, filePath, encoding);
+
+		CStringW record;
+		record.Format(L"%s|%s\n", (LPCWSTR)filePath, (LPCWSTR)encoding);
+
+		int wLen = record.GetLength();
+		int utf8Len = WideCharToMultiByte(CP_UTF8, 0, record, wLen, NULL, 0, NULL, NULL);
+		CStringA utf8Record;
+		WideCharToMultiByte(CP_UTF8, 0, record, wLen, utf8Record.GetBuffer(utf8Len), utf8Len, NULL, NULL);
+		utf8Record.ReleaseBuffer(utf8Len);
+
+		file.Write((LPCSTR)utf8Record, utf8Record.GetLength());
 	}
+	file.Close();
 }
 
 void CEncodingDlg::ClearConversionCache()
@@ -796,5 +838,151 @@ bool CEncodingDlg::HasKoreanPath(const CString& path)
 	}
 
 	return false;
+}
+
+// 파일 개수 세기
+void CEncodingDlg::CountFilesInDirectory(const CString& strPath, int& count)
+{
+	CFileFind finder;
+	CString strWildcard = strPath + _T("\\*.*");
+
+	BOOL bWorking = finder.FindFile(strWildcard);
+
+	while (bWorking)
+	{
+		bWorking = finder.FindNextFile();
+
+		if (finder.IsDots())
+			continue;
+
+		if (finder.IsDirectory())
+		{
+			CountFilesInDirectory(finder.GetFilePath(), count);
+		}
+		else
+		{
+			CString fileName = finder.GetFileName();
+			if (IsSourceFile(fileName))
+			{
+				count++;
+			}
+		}
+	}
+
+	finder.Close();
+}
+
+// 스캔 스레드
+UINT CEncodingDlg::ScanThreadProc(LPVOID pParam)
+{
+	CEncodingDlg* pDlg = (CEncodingDlg*)pParam;
+	pDlg->DoScanDirectory(pDlg->m_strPath);
+	pDlg->PostMessage(WM_USER + 101, 0, 0); // 완료 메시지
+	return 0;
+}
+
+// 실제 스캔 작업
+void CEncodingDlg::DoScanDirectory(const CString& strPath)
+{
+	CFileFind finder;
+	CString strWildcard = strPath + _T("\\*.*");
+
+	BOOL bWorking = finder.FindFile(strWildcard);
+
+	while (bWorking && !m_bStopScan)
+	{
+		bWorking = finder.FindNextFile();
+
+		if (finder.IsDots())
+			continue;
+
+		if (finder.IsDirectory())
+		{
+			DoScanDirectory(finder.GetFilePath());
+		}
+		else
+		{
+			CString fileName = finder.GetFileName();
+			if (IsSourceFile(fileName))
+			{
+				CString filePath = finder.GetFilePath();
+				CString encoding = DetectEncoding(filePath);
+
+				EncodingInfo info;
+				info.filePath = filePath;
+				info.encoding = encoding;
+				info.fileSize = (DWORD)finder.GetLength();
+
+				// 크리티컬 섹션으로 보호
+				m_csFileInfo.Lock();
+				m_arrFileInfo.Add(info);
+
+				// 카운트 증가
+				if (encoding == _T("UTF-8"))
+					m_nUtf8Count++;
+				else if (encoding == _T("ANSI") || encoding == _T("EUC-KR"))
+					m_nAnsiCount++;
+				else
+					m_nOtherCount++;
+
+				m_nScannedFiles++;
+				m_csFileInfo.Unlock();
+
+				// UI 업데이트 메시지 전송
+				PostMessage(WM_USER + 100, 0, 0);
+			}
+		}
+	}
+
+	finder.Close();
+}
+
+// 진행 상황 업데이트
+LRESULT CEncodingDlg::OnScanProgress(WPARAM wParam, LPARAM lParam)
+{
+	m_csFileInfo.Lock();
+
+	// 진행률 업데이트
+	if (m_nTotalFiles > 0)
+	{
+		m_progress.SetPos(m_nScannedFiles);
+	}
+
+	// 마지막 파일을 리스트에 추가
+	if (m_arrFileInfo.GetSize() > 0)
+	{
+		const EncodingInfo& info = m_arrFileInfo[m_arrFileInfo.GetSize() - 1];
+
+		int nIndex = m_listResults.InsertItem(m_listResults.GetItemCount(), info.filePath);
+		m_listResults.SetItemText(nIndex, 1, info.encoding);
+
+		CString strSize;
+		strSize.Format(_T("%d"), info.fileSize);
+		m_listResults.SetItemText(nIndex, 2, strSize);
+	}
+
+	m_csFileInfo.Unlock();
+
+	return 0;
+}
+
+// 스캔 완료
+LRESULT CEncodingDlg::OnScanComplete(WPARAM wParam, LPARAM lParam)
+{
+	if (m_pScanThread != NULL)
+	{
+		WaitForSingleObject(m_pScanThread->m_hThread, INFINITE);
+		delete m_pScanThread;
+		m_pScanThread = NULL;
+	}
+
+	m_progress.SetPos(m_nTotalFiles);
+	UpdateCountDisplay();
+
+	CString strMsg;
+	strMsg.Format(_T("스캔 완료: 총 %d개 파일"), m_arrFileInfo.GetSize());
+	AfxMessageBox(strMsg);
+
+	return 0;
 }
 
